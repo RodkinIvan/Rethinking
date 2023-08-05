@@ -7,7 +7,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
 def next_token_distr(model, ids):
-    logits = model(ids)['logits'][-1]
+    logits = model(ids.unsqueeze(0))['logits'][0][-1]
     probs = softmax(logits, dim=0)
     return probs
 
