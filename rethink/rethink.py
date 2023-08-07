@@ -111,7 +111,7 @@ def rethink_context(
         log
     )
 
-    dist = torch.abs(distr - prior_distr).mean(dim=-1)
+    dist = torch.abs(distr - prior_distr).sum(dim=-1) / 2
 
     ids = tokenizer(ans, add_special_tokens=False)['input_ids']
     tokens = tokenizer.batch_decode(ids, skip_special_tokens=True)
