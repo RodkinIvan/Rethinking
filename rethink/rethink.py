@@ -77,3 +77,48 @@ def distr_for_answer(
     distrs = torch.cat(distrs)
 
     return distrs
+
+
+def rethink_context(
+    model: AutoModelForCausalLM, 
+    tokenizer: AutoTokenizer, 
+    request,
+    context,
+    prior_context,
+    rethinking_prompt=default_prompt, 
+    max_length=50,
+    stop_word=default_stop,
+    log=False,
+):
+    ans, distr = answer(
+        model, 
+        tokenizer, 
+        request, 
+        context, 
+        rethinking_prompt, 
+        max_length, 
+        stop_word, 
+        return_distr=True,
+        log=log
+    )
+    prior_distr = distr_for_answer(
+        model, 
+        tokenizer,
+        request, 
+        prior_context,
+        ans,
+        rethinking_prompt,
+        log
+    )
+
+    dist = torch.abs(distr - prior_distr).mean(dim=-1)
+
+    ids = tokenizer(ans, add_special_tokens=False)['input_ids']
+    tokens = tokenizer.batch_decode(ids, skip_special_tokens=True)
+    return {
+        'answer': ans,
+        'tokens': tokens,
+        'rethink': distr,
+        'prior': distr,
+        'dist': dist
+    }
