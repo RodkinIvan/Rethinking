@@ -11,13 +11,16 @@ def process_context(
     request,
     context,
     rethinking_prompt,
-    tokenizer
+    tokenizer,
+    log=False,
 ):
     rethinking_request = rethinking_prompt.format(
         context,
         request
     )
     ids = tokenizer.encode(rethinking_request, return_tensors='pt')[0]
+    if log:
+        print(f'=== request:\n{rethinking_request}\n')
     return ids
 
 
@@ -29,12 +32,15 @@ def correct_answer(
         rethinking_prompt=default_prompt, 
         max_length=50,
         stop_word=default_stop,
-        return_distr=False
+        return_distr=False,
+        log=False,
     ):
     # generate prompt for context-aware generation
-    ids = process_context(request, context, rethinking_prompt, tokenizer).to(model.device)
+    ids = process_context(request, context, rethinking_prompt, tokenizer, log).to(model.device)
     stop_ids = tokenizer.encode(stop_word, return_tensors='pt')[0].to(model.device)
     
+    if log:
+        print(f"=== stop word:\n{stop_word}")
     new_tokens = generate_tokens(model, tokenizer, ids, stop_ids, max_length, return_distr)
     if return_distr:
         answer, distr = new_tokens
