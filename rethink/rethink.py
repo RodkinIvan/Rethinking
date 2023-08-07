@@ -33,22 +33,20 @@ def answer(
         rethinking_prompt=default_prompt, 
         max_length=50,
         stop_word=default_stop,
-        return_distr=False,
         log=False,
     ):
     # generate prompt for context-aware generation
     ids = process_context(request, context, rethinking_prompt, tokenizer, log).to(model.device)
     
-    new_tokens = generate_tokens(model, tokenizer, ids, stop_word, max_length, return_distr)
-    if return_distr:
-        answer, distr = new_tokens
+    answer, distr = generate_tokens(model, tokenizer, ids, stop_word, max_length)
 
-    answer = tokenizer.decode(answer, skip_special_tokens=True)
+    answer_str = tokenizer.decode(answer, skip_special_tokens=True)
 
-    # if answer[-len(stop_word):] == stop_word:
-        # answer = answer[:-len(stop_word)]
-    return answer if not return_distr else answer, distr
-
+    return {
+        'ans_ids': answer,
+        'distr': distr,
+        'answer': answer_str
+    }
 
 @torch.no_grad()
 def distr_for_answer(
@@ -56,26 +54,18 @@ def distr_for_answer(
     tokenizer: AutoTokenizer, 
     request,
     context,
-    answer,
+    ans_ids,
     rethinking_prompt=default_prompt,
     log=False,
-):
-    ids = process_context(request, context, rethinking_prompt, tokenizer, log).to(model.device)
-    ans_ids = tokenizer.encode(answer, add_special_tokens=False)
+):  
+    ids = torch.cat([
+        process_context(request, context, rethinking_prompt, tokenizer, log).to(model.device),
+        ans_ids.to(model.device)
+    ], dim=0)
+    ans_len = len(ans_ids)
+    logits = model(ids.unsqueeze(0))['logits'][0][-ans_len-1:-1]
 
-    distrs = []
-    for ans_tok in ans_ids:
-        distr = next_token_distr(model, ids)
-        distrs.append(distr.unsqueeze(0))
-
-
-        ids = torch.cat([
-            ids,
-            torch.tensor(ans_tok, device=model.device).unsqueeze(0)
-        ], dim=0)
-    
-    distrs = torch.cat(distrs)
-
+    distrs = torch.softmax(logits, dim=-1)
     return distrs
 
 
@@ -90,35 +80,38 @@ def rethink_context(
     stop_word=default_stop,
     log=False,
 ):
-    ans, distr = answer(
+    answer_dict = answer(
         model, 
         tokenizer, 
         request, 
         context, 
         rethinking_prompt, 
         max_length, 
-        stop_word, 
-        return_distr=True,
+        stop_word,
         log=log
     )
+
+    ans_ids = answer_dict['ans_ids']
+    distr = answer_dict['distr']
+
     prior_distr = distr_for_answer(
         model, 
         tokenizer,
         request, 
         prior_context,
-        ans,
+        ans_ids,
         rethinking_prompt,
         log
     )
 
     dist = torch.abs(distr - prior_distr).sum(dim=-1) / 2
 
-    ids = tokenizer(ans, add_special_tokens=False)['input_ids']
-    tokens = tokenizer.batch_decode(ids, skip_special_tokens=True)
+    tokens = tokenizer.batch_decode(ans_ids)
+    ans = tokenizer.decode(ans_ids)
     return {
         'answer': ans,
         'tokens': tokens,
         'rethink': distr,
-        'prior': distr,
+        'prior': prior_distr,
         'dist': dist
     }

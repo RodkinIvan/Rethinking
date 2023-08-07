@@ -14,29 +14,27 @@ def next_token_distr(model, ids):
     return probs
 
 
-def generate_next_token(model, ids, return_distr=False):
+def generate_next_token(model, ids):
     probs = next_token_distr(model, ids)
     sample = Categorical(probs).sample()
-    return sample if not return_distr else sample, probs
+    return sample, probs
 
 
 @torch.no_grad()
-def generate_tokens(model: AutoModelForCausalLM, tokenizer: AutoTokenizer, ids, stop_word, max_length=50, return_distr=False):
+def generate_tokens(model: AutoModelForCausalLM, tokenizer: AutoTokenizer, ids, stop_word, max_length=50):
     i = 0
     answer = []
     next_token = -1
 
     bar = tqdm(total=max_length)
 
-    if return_distr:
-        distr = []
+    distr = []
     
     while i < max_length and next_token != tokenizer.eos_token_id and not ends_with_word(ids, stop_word, tokenizer):
-        next_token = generate_next_token(model, ids, return_distr=return_distr)
+        next_token = generate_next_token(model, ids)
           
-        if return_distr:
-            next_token, next_distr = next_token
-            distr.append(next_distr)
+        next_token, next_distr = next_token
+        distr.append(next_distr)
 
         ids = torch.cat((ids,next_token.unsqueeze(0)), dim=0)
         answer.append(next_token)
@@ -45,11 +43,10 @@ def generate_tokens(model: AutoModelForCausalLM, tokenizer: AutoTokenizer, ids, 
     while i < max_length:
         bar.update()
         i += 1
-
-    if return_distr:    
-        distr = torch.stack(distr)
+   
+    distr = torch.stack(distr)
     answer = torch.stack(answer)
 
-    return answer if not return_distr else answer, distr
+    return answer, distr
 
 
